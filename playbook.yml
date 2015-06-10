@@ -1,0 +1,7 @@
+---
+# For use with packer and ansible-local provisioner.
+- hosts: all
+  connection: local
+  sudo: yes
+  roles:
+    - python3
