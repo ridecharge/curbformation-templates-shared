@@ -651,7 +651,6 @@
         "IamInstanceProfile": {
           "Ref": "InstanceProfile"
         },
-        
         "ImageId": {
           "Fn::If": [
             "UsePreviousAsgB",
