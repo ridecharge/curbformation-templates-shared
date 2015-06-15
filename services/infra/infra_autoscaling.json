@@ -192,13 +192,6 @@
       }
     }
   },
-  "Outputs": {
-    "AutoScalingGroupName": {
-      "Value": {
-        "Ref": "AutoScalingGroup"
-      }
-    }
-  },
   "Resources": {
     "AutoScalingAlarms": {
       "Type": "AWS::CloudFormation::Stack",
