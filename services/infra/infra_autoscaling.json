@@ -464,7 +464,7 @@
         },
         "ImageId": {
           "Fn::If": [
-            "UsePreviousAsgA",
+            "UsePreviousAsgB",
             {
               "Ref": "PreviousImageId"
             },
