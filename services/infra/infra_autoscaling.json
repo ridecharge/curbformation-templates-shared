@@ -73,6 +73,12 @@
       "AllowedPattern": "ami-[a-z0-9]{8}",
       "ConstraintDescription": "Must be a valid ami id"
     },
+    "PreviousImageId": {
+      "Description": "AMI to create instances.",
+      "Type": "String",
+      "AllowedPattern": "ami-[a-z0-9]{8}",
+      "ConstraintDescription": "Must be a valid ami id"
+    },
     "VpcName": {
       "Description": "Name of the vpc this nat is created in.",
       "Type": "String"
