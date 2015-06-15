@@ -577,7 +577,7 @@
         "HealthCheckGracePeriod": "30",
         "HealthCheckType": "EC2",
         "LaunchConfigurationName": {
-          "Ref": "AsgLaunchConfiguration"
+          "Ref": "AsgLaunchConfigurationB"
         },
         "MaxSize": {
           "Fn::FindInMap": [
