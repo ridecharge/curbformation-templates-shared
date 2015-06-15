@@ -13,6 +13,24 @@
     "DockerRepository": {
       "Type": "String"
     },
+    "Deploying": {
+      "Type": "String",
+      "Description": "Whether the deployment is currently in the deploying state",
+      "AllowedValues": [
+        "True",
+        "False"
+      ],
+      "Default": "False"
+    },
+    "DeployedAsg": {
+      "Type": "String",
+      "Description": "The AutoScalingGroup that is considered deployed.",
+      "AllowedValues": [
+        "A",
+        "B"
+      ],
+      "Default": "A"
+    },
     "InstanceType": {
       "Description": "Instance type for instance pair.",
       "Type": "String",
@@ -80,6 +98,72 @@
       "Default": ""
     }
   },
+  "Conditions": {
+    "IsDeploying": {
+      "Fn::Equals": [
+        {
+          "Ref": "Deploying"
+        },
+        "True"
+      ]
+    },
+    "PrimaryAsgA": {
+      "Fn::Equals": [
+        {
+          "Ref": "DeployedAsg"
+        },
+        "A"
+      ]
+    },
+    "PrimaryAsgB": {
+      "Fn::Equals": [
+        {
+          "Ref": "DeployedAsg"
+        },
+        "B"
+      ]
+    },
+    "CreateAsgA": {
+      "Fn::Or": [
+        {
+          "Condition": "IsDeploying"
+        },
+        {
+          "Condition": "PrimaryAsgA"
+        }
+      ]
+    },
+    "CreateAsgB": {
+      "Fn::Or": [
+        {
+          "Condition": "IsDeploying"
+        },
+        {
+          "Condition": "PrimaryAsgB"
+        }
+      ]
+    },
+    "UsePreviousAsgA": {
+      "Fn::And": [
+        {
+          "Condition": "IsDeploying"
+        },
+        {
+          "Condition": "PrimaryAsgB"
+        }
+      ]
+    },
+    "UsePreviousAsgB": {
+      "Fn::And": [
+        {
+          "Condition": "IsDeploying"
+        },
+        {
+          "Condition": "PrimaryAsgA"
+        }
+      ]
+    }
+  },
   "Mappings": {
     "Roles": {
       "nat": {
@@ -121,7 +205,15 @@
             "Ref": "Role"
           },
           "AutoScalingGroupName": {
-            "Ref": "AutoScalingGroup"
+            "Fn::If": [
+              "PrimaryAsgA",
+              {
+                "Ref": "AutoScalingGroup"
+              },
+              {
+                "Ref": "AutoScalingGroupB"
+              }
+            ]
           },
           "AlarmName": {
             "Fn::Join": [
@@ -154,7 +246,30 @@
         "TimeoutInMinutes": "10"
       }
     },
+    "AsgSnsTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": {
+          "Fn::Join": [
+            "-",
+            [
+              {
+                "Ref": "Environment"
+              },
+              {
+                "Ref": "VpcName"
+              },
+              {
+                "Ref": "Role"
+              },
+              "autoscaling-notifications"
+            ]
+          ]
+        }
+      }
+    },
     "AsgLaunchConfiguration": {
+      "Condition": "CreateAsgA",
       "Type": "AWS::AutoScaling::LaunchConfiguration",
       "Properties": {
         "AssociatePublicIpAddress": {
@@ -171,7 +286,15 @@
           "Ref": "InstanceProfile"
         },
         "ImageId": {
-          "Ref": "ImageId"
+          "Fn::If": [
+            "UsePreviousAsgA",
+            {
+              "Ref": "PreviousImageId"
+            },
+            {
+              "Ref": "ImageId"
+            }
+          ]
         },
         "InstanceType": {
           "Ref": "InstanceType"
@@ -218,29 +341,186 @@
         }
       }
     },
-    "AsgSnsTopic": {
-      "Type": "AWS::SNS::Topic",
-      "Properties": {
-        "TopicName": {
-          "Fn::Join": [
-            "-",
-            [
-              {
-                "Ref": "Environment"
-              },
-              {
-                "Ref": "VpcName"
-              },
+    "AutoScalingGroup": {
+      "Condition": "CreateAsgA",
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "MinInstancesInService": {
+            "Fn::FindInMap": [
+              "Roles",
               {
                 "Ref": "Role"
               },
-              "autoscaling-notifications"
+              "MinInstancesInService"
             ]
+          },
+          "MaxBatchSize": {
+            "Fn::FindInMap": [
+              "Roles",
+              {
+                "Ref": "Role"
+              },
+              "MaxBatchSize"
+            ]
+          },
+          "PauseTime": "PT4M0S"
+        }
+      },
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {
+          "Ref": "AvailabilityZones"
+        },
+        "NotificationConfiguration": {
+          "NotificationTypes": [
+            "autoscaling:EC2_INSTANCE_LAUNCH",
+            "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+            "autoscaling:EC2_INSTANCE_TERMINATE",
+            "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+            "autoscaling:TEST_NOTIFICATION"
+          ],
+          "TopicARN": {
+            "Ref": "AsgSnsTopic"
+          }
+        },
+        "TerminationPolicies": [
+          {
+            "Ref": "TerminationPolicy"
+          }
+        ],
+        "Cooldown": "30",
+        "DesiredCapacity": "2",
+        "HealthCheckGracePeriod": "30",
+        "HealthCheckType": "EC2",
+        "LaunchConfigurationName": {
+          "Ref": "AsgLaunchConfiguration"
+        },
+        "MaxSize": {
+          "Fn::FindInMap": [
+            "Roles",
+            {
+              "Ref": "Role"
+            },
+            "MaxSize"
           ]
+        },
+        "MinSize": "2",
+        "VPCZoneIdentifier": {
+          "Ref": "Subnets"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "-",
+                [
+                  {
+                    "Ref": "Environment"
+                  },
+                  {
+                    "Ref": "VpcName"
+                  },
+                  {
+                    "Ref": "Role"
+                  }
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            },
+            "PropagateAtLaunch": "true"
+          },
+          {
+            "Key": "Role",
+            "Value": {
+              "Ref": "Role"
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      }
+    },
+    "AsgLaunchConfigurationB": {
+      "Condition": "CreateAsgB",
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "AssociatePublicIpAddress": {
+          "Fn::FindInMap": [
+            "Roles",
+            {
+              "Ref": "Role"
+            },
+            "public"
+          ]
+        },
+        "EbsOptimized": false,
+        "IamInstanceProfile": {
+          "Ref": "InstanceProfile"
+        },
+        "ImageId": {
+          "Fn::If": [
+            "UsePreviousAsgA",
+            {
+              "Ref": "PreviousImageId"
+            },
+            {
+              "Ref": "ImageId"
+            }
+          ]
+        },
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "KeyName": {
+          "Ref": "Environment"
+        },
+        "SecurityGroups": {
+          "Ref": "SecurityGroups"
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/sh",
+                "\nexport DOCKER_REPO=",
+                {
+                  "Ref": "DockerRepository"
+                },
+                "\nexport SERIAL=",
+                {
+                  "Ref": "Serial"
+                },
+                "\nexport LOGGLY_TOKEN=",
+                {
+                  "Ref": "LogglyToken"
+                },
+                "\nexport NR_TOKEN=",
+                {
+                  "Ref": "NewRelicToken"
+                },
+                "\nexport ENVIRONMENT=",
+                {
+                  "Ref": "Environment"
+                },
+                "\n",
+                {
+                  "Ref": "UserData"
+                }
+              ]
+            ]
+          }
         }
       }
     },
-    "AutoScalingGroup": {
+    "AutoScalingGroupB": {
+      "Condition": "CreateAsgB",
       "UpdatePolicy": {
         "AutoScalingRollingUpdate": {
           "MinInstancesInService": {
