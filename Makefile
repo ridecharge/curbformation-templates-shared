@@ -5,7 +5,7 @@ all: build push clean
 
 build:
 	ansible-galaxy install -r requirements.yml -f
-	docker build -t --no-cache --pull $(CONTAINER):latest . 
+	docker build --no-cache --pull -t $(CONTAINER):latest . 
 
 push:
 	docker push $(CONTAINER)
